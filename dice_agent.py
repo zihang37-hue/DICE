@@ -26,6 +26,33 @@ def call_llm(model, prompt, temperature=0.0, stop=None, max_tokens=500):
         print(f"⚠️ Ollama 调用失败 ({model}): {e}")
         return ""
 
+
+def extract_thought(content):
+    """从模型输出中提取纯 Thought（去掉 Action 部分）"""
+    if not content:
+        return ""
+    # 去掉 Action 之后的内容
+    head = content.split("Action:")[0]
+    # 去掉前缀 Thought:
+    if "Thought:" in head:
+        head = head.split("Thought:", 1)[1]
+    return head.strip()
+
+
+def clean_demo_text(demo_text):
+    """清洗检索到的demo，去除重复Action和Thought中夹带的Action"""
+    lines = []
+    last_action = None
+    for line in demo_text.splitlines():
+        if line.startswith("Thought:") and "Action:" in line:
+            line = line.split("Action:")[0].rstrip()
+        if line.startswith("Action:"):
+            if last_action == line:
+                continue
+            last_action = line
+        lines.append(line)
+    return "\n".join(lines)
+
 # [在线阶段 Prompt] 让 Gemma 预测下一步需要什么逻辑
 PREDICTION_PROMPT = """Predict the abstract reasoning strategy needed for the next step.
 
@@ -182,6 +209,8 @@ class DICEAgent:
         # 检索示例轨迹并拼接到提示词（use_tk=False 时跳过检索）
         if use_tk:
             demos = self.retrieve_demos(task, history_str)
+            if demos:
+                demos = [clean_demo_text(d) for d in demos]
             demo_text = "\n\n".join(demos) if demos else ""
         else:
             demo_text = ""
@@ -233,7 +262,8 @@ class DICEAgent:
                 print(f"⚠️ [警告] 检测到重复搜索: {action}")
                 return content, "REPEAT_ERROR"
 
-        return content, action  # 返回本步Thought与Action
+        thought_text = extract_thought(content)
+        return thought_text, action  # 返回纯Thought与Action
 
     def _fallback_answer(self, task):
         """当模型无法输出有效Action时，尝试用一次简短调用从已有Observation中总结答案"""
@@ -424,10 +454,10 @@ if __name__ == "__main__":
     from datasets import load_dataset
 
     # ====== 配置 ======
-    NUM_TEST = 30          # 测试题数量（可调整，建议 50-100）
-    MAX_STEPS = 6          # 每题最大推理步数
+    NUM_TEST = 50         # 测试题数量（可调整，建议 50-100）
+    MAX_STEPS = 5          # 每题最大推理步数
     DIFFICULTY = None    # 筛选难度: "hard" / "medium" / 两者都要改为 None
-    SEED = 1
+    SEEDS = [2, 3, 4]
 
     # 加载 HotpotQA 验证集
     print("📥 正在加载 HotpotQA 验证集...")
@@ -438,79 +468,83 @@ if __name__ == "__main__":
         val_dataset = val_dataset.filter(lambda x: x['level'] == DIFFICULTY)
         print(f"🔍 筛选 [{DIFFICULTY}] 难度: 共 {len(val_dataset)} 题")
     
-    # 随机抽样（seed 不同于 build_pool，避免和训练集重叠无关但保证可复现）
-    if len(val_dataset) > NUM_TEST:
-        val_dataset = val_dataset.shuffle(seed=SEED).select(range(NUM_TEST))
-    print(f"📝 本次测试: {len(val_dataset)} 题\n")
+    for SEED in SEEDS:
+        # 随机抽样（seed 不同于 build_pool，避免和训练集重叠无关但保证可复现）
+        if len(val_dataset) > NUM_TEST:
+            test_dataset = val_dataset.shuffle(seed=SEED).select(range(NUM_TEST))
+        else:
+            test_dataset = val_dataset
+        print(f"\n🧪 随机种子: {SEED} | 本次测试: {len(test_dataset)} 题\n")
 
-    # 初始化 Agent
-    agent = DICEAgent()
+        # 初始化 Agent
+        agent = DICEAgent()
 
-    # 收集结果
-    dice_correct = 0
-    base_correct = 0
-    results = []
+        # 收集结果
+        dice_correct = 0
+        base_correct = 0
+        results = []
 
-    for i, item in enumerate(val_dataset):
-        question = item['question']
-        gold_answer = item['answer']
-        print(f"\n{'#'*60}")
-        print(f"# 第 {i+1}/{len(val_dataset)} 题  |  标准答案: {gold_answer}")
-        print(f"{'#'*60}")
+        for i, item in enumerate(test_dataset):
+            question = item['question']
+            gold_answer = item['answer']
+            print(f"\n{'#'*60}")
+            print(f"# 第 {i+1}/{len(test_dataset)} 题  |  标准答案: {gold_answer}")
+            print(f"{'#'*60}")
 
-        # DICE 模式（有 TK）
-        ans_tk = agent.run_task(question, max_steps=MAX_STEPS, use_tk=True)
-        tk_match = exact_match(ans_tk, gold_answer) if ans_tk else False
-        if tk_match:
-            dice_correct += 1
+            # DICE 模式（有 TK）
+            ans_tk = agent.run_task(question, max_steps=MAX_STEPS, use_tk=True)
+            tk_match = exact_match(ans_tk, gold_answer) if ans_tk else False
+            if tk_match:
+                dice_correct += 1
 
-        # Baseline 模式（无 TK）
-        ans_no = agent.run_task(question, max_steps=MAX_STEPS, use_tk=False)
-        no_match = exact_match(ans_no, gold_answer) if ans_no else False
-        if no_match:
-            base_correct += 1
+            # Baseline 模式（无 TK）
+            ans_no = agent.run_task(question, max_steps=MAX_STEPS, use_tk=False)
+            no_match = exact_match(ans_no, gold_answer) if ans_no else False
+            if no_match:
+                base_correct += 1
 
-        record = {
-            "id": item.get("id") if isinstance(item, dict) else None,
-            "question": question,
-            "gold": gold_answer,
-            "dice_answer": ans_tk,
-            "dice_em": tk_match,
-            "base_answer": ans_no,
-            "base_em": no_match,
-        }
-        results.append(record)
+            record = {
+                "id": item.get("id") if isinstance(item, dict) else None,
+                "question": question,
+                "gold": gold_answer,
+                "dice_answer": ans_tk,
+                "dice_em": tk_match,
+                "base_answer": ans_no,
+                "base_em": no_match,
+            }
+            results.append(record)
 
-        # 实时显示进度
-        tested = i + 1
-        print(f"\n📊 进度 [{tested}/{len(val_dataset)}]  "
-              f"DICE: {dice_correct}/{tested} ({dice_correct/tested*100:.1f}%)  "
-              f"Baseline: {base_correct}/{tested} ({base_correct/tested*100:.1f}%)")
+            # 实时显示进度
+            tested = i + 1
+            print(f"\n📊 进度 [{tested}/{len(test_dataset)}]  "
+                  f"DICE: {dice_correct}/{tested} ({dice_correct/tested*100:.1f}%)  "
+                  f"Baseline: {base_correct}/{tested} ({base_correct/tested*100:.1f}%)")
 
-    # ========== 最终汇总 ==========
-    total = len(results)
-    print(f"\n\n{'='*70}")
-    print(f"{'实验结果汇总':^70}")
-    print(f"{'='*70}")
-    print(f"  模型:        {MAIN_LLM}")
-    print(f"  检索器:      {RETRIEVER_LLM}")
-    print(f"  测试题数:    {total} ({DIFFICULTY or '全部'} 难度)")
-    print(f"  最大步数:    {MAX_STEPS}")
-    print(f"{'─'*70}")
-    print(f"  DICE (+TK)   EM: {dice_correct}/{total} = {dice_correct/total*100:.1f}%")
-    print(f"  Baseline     EM: {base_correct}/{total} = {base_correct/total*100:.1f}%")
-    print(f"  差值:        {(dice_correct - base_correct)/total*100:+.1f}%")
-    print(f"{'='*70}")
+        # ========== 最终汇总 ==========
+        total = len(results)
+        print(f"\n\n{'='*70}")
+        print(f"{'实验结果汇总':^70}")
+        print(f"{'='*70}")
+        print(f"  随机种子:    {SEED}")
+        print(f"  模型:        {MAIN_LLM}")
+        print(f"  检索器:      {RETRIEVER_LLM}")
+        print(f"  测试题数:    {total} ({DIFFICULTY or '全部'} 难度)")
+        print(f"  最大步数:    {MAX_STEPS}")
+        print(f"{'─'*70}")
+        print(f"  DICE (+TK)   EM: {dice_correct}/{total} = {dice_correct/total*100:.1f}%")
+        print(f"  Baseline     EM: {base_correct}/{total} = {base_correct/total*100:.1f}%")
+        print(f"  差值:        {(dice_correct - base_correct)/total*100:+.1f}%")
+        print(f"{'='*70}")
 
-    # 逐题明细
-    print(f"\n{'─'*70}")
-    print(f"{'逐题明细':^70}")
-    print(f"{'─'*70}")
-    for idx, r in enumerate(results, 1):
-        tk_mark = "✅" if r['dice_em'] else "❌"
-        no_mark = "✅" if r['base_em'] else "❌"
-        print(f"{idx:>3}. Q: {r['question'][:55]}")
-        print(f"     标准: {r['gold']}")
-        print(f"     DICE: {r['dice_answer'] or '未回答':30} {tk_mark}")
-        print(f"     Base: {r['base_answer'] or '未回答':30} {no_mark}")
-        print()
+        # 逐题明细
+        print(f"\n{'─'*70}")
+        print(f"{'逐题明细':^70}")
+        print(f"{'─'*70}")
+        for idx, r in enumerate(results, 1):
+            tk_mark = "✅" if r['dice_em'] else "❌"
+            no_mark = "✅" if r['base_em'] else "❌"
+            print(f"{idx:>3}. Q: {r['question'][:55]}")
+            print(f"     标准: {r['gold']}")
+            print(f"     DICE: {r['dice_answer'] or '未回答':30} {tk_mark}")
+            print(f"     Base: {r['base_answer'] or '未回答':30} {no_mark}")
+            print()
