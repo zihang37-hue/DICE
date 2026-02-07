@@ -27,40 +27,54 @@ def call_llm(model, prompt, temperature=0.0, stop=None, max_tokens=500):
         return ""
 
 # [在线阶段 Prompt] 让 Gemma 预测下一步需要什么逻辑
-PREDICTION_PROMPT = """[Instruction]
-You are an expert in strategic reasoning.
-Based on the current task and history, predict the **abstract reasoning logic** needed for the NEXT step.
+PREDICTION_PROMPT = """Predict the abstract reasoning strategy needed for the next step.
 
-[Constraints]
-1. Do NOT try to answer the question.
-2. Do NOT mention specific entity names (like "Titanic", "Obama"). Use terms like "Subject", "Entity", "Attribute".
-3. The output must be a strategy description that matches the Transferable Knowledge in our database.
+Rules:
+- Do NOT answer the question or mention any specific names, places, or entities.
+- Use generic terms: Entity A, Entity B, Subject, Attribute, Target.
+- Follow the output format exactly: Type, Steps, Strategy.
 
-[Examples]
-
-Input:
-Task: Which film was released earlier, Titanic or Avatar?
+Example 1:
+Task: Which of two entities has a larger Attribute?
 History: []
-Required Reasoning Strategy:
-To solve this comparison problem, the agent should first identify the two entities involved. Then, it needs to initiate a search for the first entity to retrieve its specific attribute (release date).
+Output:
+Type: comparison
+Steps: 1) Search Entity A for Attribute. 2) Search Entity B for Attribute. 3) Compare and finish.
+Strategy: Retrieve a shared attribute from two entities and compare them.
 
-Input:
-Task: Who is the mother of the founder of Amazon?
-History: 
-Action: Search[Amazon founder]
-Observation: Jeff Bezos is the founder of Amazon.
-Required Reasoning Strategy:
-Since the key subject (founder) has been identified from the search results, the agent should now perform a secondary search specifically targeting that subject to find the requested relationship (mother).
+Example 2:
+Task: What is the Attribute of the Subject related to Entity A?
+History:
+Thought: I searched for Entity A.
+Action: Search[Entity A]
+Observation: Entity A is related to Subject B.
+Output:
+Type: multi-hop
+Steps: 1) Already found Subject B. 2) Search Subject B for the Target Attribute. 3) Finish.
+Strategy: Use the discovered intermediate entity to reach the final answer.
 
---------------------------------------------------
+Example 3:
+Task: What is the Attribute of Entity A that connects to Entity B?
+History: []
+Output:
+Type: bridge
+Steps: 1) Search Entity A to find its link to Entity B. 2) Extract bridging Attribute. 3) Finish.
+Strategy: Find a connecting relationship between two entities.
 
-[Current Context]
+Example 4:
+Task: What is the Attribute of Entity A?
+History: []
+Output:
+Type: lookup
+Steps: 1) Search Entity A. 2) Extract Attribute. 3) Finish.
+Strategy: Direct search and single-attribute extraction.
+
+Now predict for:
 Task: {task}
 History:
 {history}
 
-[Output]
-Required Reasoning Strategy:"""
+Output:"""
 
 # 主LLM的ReAct规则与格式
 REACT_SYSTEM_PROMPT = """You are a smart agent answering questions using Wikipedia search.
@@ -410,9 +424,10 @@ if __name__ == "__main__":
     from datasets import load_dataset
 
     # ====== 配置 ======
-    NUM_TEST = 50          # 测试题数量（可调整，建议 50-100）
+    NUM_TEST = 30          # 测试题数量（可调整，建议 50-100）
     MAX_STEPS = 6          # 每题最大推理步数
     DIFFICULTY = None    # 筛选难度: "hard" / "medium" / 两者都要改为 None
+    SEED = 1
 
     # 加载 HotpotQA 验证集
     print("📥 正在加载 HotpotQA 验证集...")
@@ -425,7 +440,7 @@ if __name__ == "__main__":
     
     # 随机抽样（seed 不同于 build_pool，避免和训练集重叠无关但保证可复现）
     if len(val_dataset) > NUM_TEST:
-        val_dataset = val_dataset.shuffle(seed=1).select(range(NUM_TEST))
+        val_dataset = val_dataset.shuffle(seed=SEED).select(range(NUM_TEST))
     print(f"📝 本次测试: {len(val_dataset)} 题\n")
 
     # 初始化 Agent
@@ -455,14 +470,16 @@ if __name__ == "__main__":
         if no_match:
             base_correct += 1
 
-        results.append({
+        record = {
+            "id": item.get("id") if isinstance(item, dict) else None,
             "question": question,
             "gold": gold_answer,
             "dice_answer": ans_tk,
             "dice_em": tk_match,
             "base_answer": ans_no,
             "base_em": no_match,
-        })
+        }
+        results.append(record)
 
         # 实时显示进度
         tested = i + 1

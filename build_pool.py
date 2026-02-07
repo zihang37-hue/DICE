@@ -4,138 +4,83 @@ from datasets import load_dataset
 from sentence_transformers import SentenceTransformer
 import ollama
 from tqdm import tqdm
+from dice_agent import DICEAgent, exact_match
 
-TARGET_SIZE = 2000
+TARGET_SIZE = 500
 DB_PATH = "./dice_vector_db"
 COLLECTION_NAME = "hotpotqa_pool"
+MAX_STEPS = 6
+LEVELS = ["hard", "medium"]  # 可改为 None 表示不过滤难度
 
 EXTRACTION_PROMPT = """Extract the abstract reasoning strategy from the trajectory below.
 
 Rules:
-- Do NOT mention any specific names, dates, places, or entities from the trajectory.
-- Use generic terms: Entity A, Entity B, Subject, Attribute, Target.
-- Follow the output format exactly: Type, Steps, Strategy.
+- Do NOT mention any specific names, dates, places, or entities.
+- Use generic terms: Entity A, Entity B, Subject, Attribute.
+- Output exactly three lines: Type, Steps, Strategy.
 
-Example 1 (comparison):
+Example 1:
 Trajectory:
-Task: Which magazine was published first, X or Y?
-Thought: I need to search for information about specific entities to compare or connect them.
-Action: Search[X, Y]
-Observation: I found the following information:
-X: X is a magazine first published in 1844.
-Y: Y is a magazine first published in 1989.
-Thought: I have sufficient information to answer.
-Action: Finish[X]
+Task: Which of Entity A or Entity B was created first?
+Thought: I need to find when Entity A was created.
+Action: Search[Entity A]
+Observation: [Title: Entity A] Entity A was created in 1990...
+Thought: Now I need to find when Entity B was created.
+Action: Search[Entity B]
+Observation: [Title: Entity B] Entity B was created in 1975...
+Thought: Entity B (1975) is earlier than Entity A (1990).
+Action: Finish[Entity B]
 
 Output:
 Type: comparison
-Steps: 1) Search both Entity A and Entity B. 2) Extract the same Attribute from each. 3) Compare values and finish.
-Strategy: Retrieve a shared attribute from two entities and compare them.
+Steps: 1) Search Entity A for Attribute. 2) Search Entity B for same Attribute. 3) Compare and finish.
+Strategy: Search two entities separately, compare a shared attribute, return the one that fits.
 
-Example 2 (multi-hop):
+Example 2:
 Trajectory:
-Task: Who is the mother of the founder of Company Z?
-Thought: I need to search for information about specific entities to compare or connect them.
-Action: Search[Company Z, Person A]
-Observation: I found the following information:
-Company Z: Company Z was founded by Person A.
-Person A: Person A was born in 1964. His mother is Person B.
-Thought: I have sufficient information to answer.
-Action: Finish[Person B]
+Task: What is the occupation of the founder of Entity A?
+Thought: I need to find who founded Entity A.
+Action: Search[Entity A]
+Observation: [Title: Entity A] Entity A was founded by Subject B...
+Thought: Now I need to find Subject B's occupation.
+Action: Search[Subject B]
+Observation: [Title: Subject B] Subject B is a scientist...
+Thought: Subject B is a scientist.
+Action: Finish[scientist]
 
 Output:
 Type: multi-hop
-Steps: 1) Search the main Entity to identify an intermediate Subject. 2) Find the Target attribute of that Subject. 3) Finish with the Target.
-Strategy: Chain through an intermediate entity to reach the requested relationship.
+Steps: 1) Search Entity A to find intermediate Subject. 2) Search Subject for target Attribute. 3) Finish.
+Strategy: Chain through an intermediate entity discovered in the first search to reach the final answer.
 
-Example 3 (bridge):
+Example 3:
 Trajectory:
-Task: What city is the football club from that plays in League X?
-Thought: I need to search for information about specific entities to compare or connect them.
-Action: Search[League X, Club A]
-Observation: I found the following information:
-Club A: Club A is a football club based in City M that plays in League X.
-League X: League X is a professional football league.
-Thought: I have sufficient information to answer.
-Action: Finish[City M]
-
-Output:
-Type: bridge
-Steps: 1) Search Entity A to find its link to Entity B. 2) Extract the bridging Attribute from the connection. 3) Finish.
-Strategy: Find a connecting relationship between two entities through shared context.
-
-Example 4 (lookup):
-Trajectory:
-Task: What nationality is Person P?
-Thought: I need to search for information about specific entities to compare or connect them.
-Action: Search[Person P]
-Observation: I found the following information:
-Person P: Person P (born 1950) is a French novelist and playwright.
-Thought: I have sufficient information to answer.
+Task: What is the Attribute of Entity A?
+Thought: I should search for Entity A.
+Action: Search[Entity A]
+Observation: [Title: Entity A] Entity A is a French novelist...
+Thought: The answer is French.
 Action: Finish[French]
 
 Output:
 Type: lookup
-Steps: 1) Search the Entity directly. 2) Extract the requested Attribute from results. 3) Finish.
-Strategy: Direct search and single-attribute extraction.
+Steps: 1) Search Entity A. 2) Extract Attribute from results. 3) Finish.
+Strategy: Direct single-entity search and attribute extraction.
 
 Now extract from this trajectory:
 {trajectory}
 
 Output:"""
 
-def format_trajectory(sample):
-    """
-    把原始数据(Q+A+Facts)转换成ReAct的轨迹
-    """
-    question = sample["question"]
-    answer = sample["answer"]
-    # 提取支撑事实的标题，支撑事实：证明agent找到的信息是正确的证据
-    target_titles = []
-    if 'supporting_facts' in sample:
-        facts_data = sample['supporting_facts']
-        if isinstance(facts_data, dict) and 'title' in facts_data:
-            target_titles = list(set(facts_data['title']))
-        elif isinstance(facts_data, list):
-            target_titles = list(set([item[0] for item in facts_data]))
-    
-    # 构造轨迹字符串（注意Action:后面有空格，保持格式统一）
+def history_to_trajectory(question, history, final_answer):
+    """将baseline运行时的history转为轨迹字符串"""
     traj = f"Task: {question}\n"
-    traj += f"Thought: I need to search for information about specific entities to compare or connect them.\n"
-    if target_titles:
-        traj += f"Action: Search[{', '.join(target_titles)}]\n"
-
-        real_context = ""
-        # 修复：从sample中获取context，而不是从facts_data
-        context_data = sample.get('context', {})
-
-        if context_data:
-            iterator = []
-            if isinstance(context_data, dict):
-                titles = context_data.get('title', [])
-                # 修复：字段名是'sentences'（复数）
-                sentences = context_data.get('sentences', [])
-                iterator = zip(titles, sentences)
-            elif isinstance(context_data, list):
-                iterator = context_data
-            
-            # item的数据结构[title, sentences]
-            for item in iterator:
-                title = item[0]
-                sentences = item[1]
-                # 修复：使用正确的变量名target_titles
-                if title in target_titles:
-                    # 把前两句话拼接起来，用空格连接更自然
-                    snippet = " ".join(sentences[:2])
-                    real_context += f"{title}: {snippet}\n"
-        if real_context:
-            traj += f"Observation: I found the following information:\n{real_context}\n"
-        else:
-            real_context = "No relevant information found."
-            traj += f"Observation: {real_context}\n"
-    traj += f"Thought: I have sufficient information to answer.\n"
-    traj += f"Action: Finish[{answer}]\n"
-
+    for record in history:
+        traj += f"Thought: {record['thought']}\n"
+        traj += f"Action: {record['action']}\n"
+        traj += f"Observation: {record['observation']}\n"
+    traj += "Thought: I have sufficient information to answer.\n"
+    traj += f"Action: Finish[{final_answer}]\n"
     return traj
 
 
@@ -152,22 +97,35 @@ def build():
     collection = client.create_collection(COLLECTION_NAME)
     print(f"加载HotpotQA数据集")
     dataset = load_dataset("hotpot_qa", "distractor", split=f"train", trust_remote_code=True)
-    # 筛选出中等和难题
-    filtered_dataset = dataset.filter(lambda x: x['level'] in ['hard', 'medium'])
-    if len(filtered_dataset) > TARGET_SIZE:
-        sampled_dataset = filtered_dataset.shuffle(seed=42).select(range(TARGET_SIZE))
+    # 难度筛选
+    if LEVELS:
+        filtered_dataset = dataset.filter(lambda x: x['level'] in LEVELS)
+        print(f"筛选难度 {LEVELS} 后: {len(filtered_dataset)}")
     else:
-        sampled_dataset = filtered_dataset
-    print(f"Gemma开始构建知识库")
+        filtered_dataset = dataset
+    filtered_dataset = filtered_dataset.shuffle(seed=42)
+
+    # baseline agent（用于跑题收集成功轨迹）
+    agent = DICEAgent()
+
+    print(f"开始构建知识库（baseline刷题 + Gemma提取TK）")
 
     ids = []
     embeddings = []
     metadatas = []
     documents = [] # 存储TK
 
-    for i, item in enumerate(tqdm(sampled_dataset, desc="Processing")):
-        # 造轨迹
-        raw_traj = format_trajectory(item)
+    for i, item in enumerate(tqdm(filtered_dataset, desc="Processing")):
+        if len(ids) >= TARGET_SIZE:
+            break
+
+        # 用 baseline agent 跑题，只保留答对的轨迹
+        question = item["question"]
+        gold_answer = item["answer"]
+        pred = agent.run_task(question, max_steps=MAX_STEPS, use_tk=False)
+        if not pred or not exact_match(pred, gold_answer):
+            continue
+        raw_traj = history_to_trajectory(question, agent.history, pred)
         # 提取知识（通过本地Gemma）
         try:
             res = ollama.generate(
@@ -186,6 +144,8 @@ def build():
         embeddings.append(vec)
         metadatas.append({"raw_trajectory": raw_traj})
         documents.append(tk)
+
+        print(f"已成功生成 {len(ids)} 条（尝试了 {i} 题）")
     
     # 检查是否有成功处理的数据
     if not ids:
