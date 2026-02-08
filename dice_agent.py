@@ -457,7 +457,7 @@ if __name__ == "__main__":
     NUM_TEST = 50         # 测试题数量（可调整，建议 50-100）
     MAX_STEPS = 5          # 每题最大推理步数
     DIFFICULTY = None    # 筛选难度: "hard" / "medium" / 两者都要改为 None
-    SEEDS = [2, 3, 4]
+    SEEDS = [23, 4]
 
     # 加载 HotpotQA 验证集
     print("📥 正在加载 HotpotQA 验证集...")
