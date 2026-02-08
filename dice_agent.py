@@ -288,6 +288,13 @@ Answer (just the answer, nothing else):"""
             answer = call_llm(MAIN_LLM, summary_prompt, temperature=0.0, max_tokens=50)
             if answer:
                 answer = answer.split('\n')[0].strip()
+                # 若模型仍输出 Action/Finish 格式，提取括号内的真实答案
+                match = re.search(r'Finish\[([^\]]*)\]', answer)
+                if match:
+                    answer = match.group(1).strip()
+                # 去掉可能的 Action: 前缀
+                if answer.lower().startswith("action:"):
+                    answer = answer.split(":", 1)[-1].strip()
                 print(f"💡 从历史Observation中提取到答案: {answer}")
                 return f"Finish[{answer}]"
         
@@ -455,10 +462,10 @@ if __name__ == "__main__":
     from datasets import load_dataset
 
     # ====== 配置 ======
-    NUM_TEST = 50         # 测试题数量（可调整，建议 50-100）
+    NUM_TEST = 20        # 测试题数量（可调整，建议 50-100）
     MAX_STEPS = 5          # 每题最大推理步数
     DIFFICULTY = None    # 筛选难度: "hard" / "medium" / 两者都要改为 None
-    SEEDS = [23, 4]
+    SEEDS = [5, 6, 7, 8]
 
     # 加载 HotpotQA 验证集
     print("📥 正在加载 HotpotQA 验证集...")
