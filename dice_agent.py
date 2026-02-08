@@ -109,16 +109,17 @@ You MUST follow the Thought-Action format strictly. Every response MUST contain 
 
 RULES:
 1. Search for ONE entity at a time (e.g., Search[France], NOT Search[France,capital]).
-2. After each Observation, check if it contains the answer. If yes, immediately use Action: Finish[answer].
+2. After each Observation, check if it contains the answer. If yes, immediately use Action: Finish[...].
 3. If a search fails or returns irrelevant results, try a DIFFERENT and SIMPLER keyword.
-4. After 2-3 searches, you likely have enough information. Combine what you learned and use Action: Finish[answer].
+4. After 2-3 searches, you likely have enough information. Combine what you learned and use Action: Finish[...].
 5. The answer should be SHORT and DIRECT (e.g., "Paris", "George Washington", "Pacific Ocean").
 6. NEVER output Finish[Unknown] if you have seen ANY useful information in previous Observations.
-7. ALWAYS output an Action line. Your response MUST end with: Action: Search[entity] or Action: Finish[answer]
+7. ALWAYS output an Action line. Your response MUST end with: Action: Search[entity] or Action: Finish[...]
+8. Inside Finish[...], include ONLY the final answer text (no extra words or explanations).
 
 FORMAT (you MUST follow this exactly):
 Thought: [your reasoning, referencing information from Observations]
-Action: Search[entity] or Finish[answer]
+Action: Search[entity] or Finish[...]
 
 Examples:
 {demonstrations}
@@ -314,7 +315,7 @@ Answer (just the answer, nothing else):"""
             if action == "REPEAT_ERROR":
                 print("🛑 检测到连续重复动作")
                 # 强制给一个提示，让模型改变策略
-                observation = "⚠️ You are repeating the same search. Please try a DIFFERENT keyword or use Finish[answer] with your best knowledge."
+                observation = "⚠️ You are repeating the same search. Please try a DIFFERENT keyword or use Finish[...] with only the final answer inside brackets."
                 self.history.append({
                     "thought": "Repeating previous action",
                     "action": self.history[-1]['action'] if self.history else "Search[Unknown]",
@@ -370,7 +371,7 @@ Answer (just the answer, nothing else):"""
                     # 检查是否重复搜索（核心防御机制）
                     if query in searched_queries:
                         print(f"⚠️ 检测到重复搜索query: '{query}'")
-                        observation = f"⚠️ You already searched for '{query}' before! Results were shown in previous Observations. Please try a DIFFERENT entity or use Finish[answer]."
+                        observation = f"⚠️ You already searched for '{query}' before! Results were shown in previous Observations. Please try a DIFFERENT entity or use Finish[...] with only the final answer inside brackets."
                         consecutive_failures += 1
                     else:
                         # 执行新的搜索
@@ -388,18 +389,18 @@ Answer (just the answer, nothing else):"""
                         else:
                             consecutive_failures = 0  # 重置失败计数
                             # 搜索成功后追加提示，引导模型利用已有信息
-                            observation += f"\n(If this answers the question '{task}', use Action: Finish[answer] now.)"
+                            observation += f"\n(If this answers the question '{task}', use Action: Finish[...] with only the final answer inside brackets.)"
                     
                     # 连续失败太多次，给出强烈提示
                     if consecutive_failures >= 3:
                         print("⚠️ 连续3次搜索失败，提示模型使用已有知识")
-                        observation += "\n\n💡 HINT: You have tried multiple searches without success. Please use Action: Finish[answer] with your best knowledge or information from previous Observations."
+                        observation += "\n\n💡 HINT: You have tried multiple searches without success. Please use Action: Finish[...] with only the final answer inside brackets."
                         
                 except Exception as e:
                     observation = f"Search error: {e}"
                     consecutive_failures += 1
             else:
-                observation = "Invalid action format. Use Search[entity] or Finish[answer]."
+                observation = "Invalid action format. Use Search[entity] or Finish[...]."
             
             # 显示observation
             print(f"👁️ Observation: {observation[:150]}{'...' if len(observation) > 150 else ''}")
@@ -468,6 +469,7 @@ if __name__ == "__main__":
         val_dataset = val_dataset.filter(lambda x: x['level'] == DIFFICULTY)
         print(f"🔍 筛选 [{DIFFICULTY}] 难度: 共 {len(val_dataset)} 题")
     
+    seed_summaries = []
     for SEED in SEEDS:
         # 随机抽样（seed 不同于 build_pool，避免和训练集重叠无关但保证可复现）
         if len(val_dataset) > NUM_TEST:
@@ -535,6 +537,7 @@ if __name__ == "__main__":
         print(f"  Baseline     EM: {base_correct}/{total} = {base_correct/total*100:.1f}%")
         print(f"  差值:        {(dice_correct - base_correct)/total*100:+.1f}%")
         print(f"{'='*70}")
+        seed_summaries.append((SEED, dice_correct, base_correct, total))
 
         # 逐题明细
         print(f"\n{'─'*70}")
@@ -548,3 +551,15 @@ if __name__ == "__main__":
             print(f"     DICE: {r['dice_answer'] or '未回答':30} {tk_mark}")
             print(f"     Base: {r['base_answer'] or '未回答':30} {no_mark}")
             print()
+
+    # ====== 各随机种子汇总 ======
+    print(f"\n{'='*70}")
+    print(f"{'随机种子结果汇总':^70}")
+    print(f"{'='*70}")
+    print(f"{'Seed':<6} {'DICE':<15} {'Baseline':<15} {'Diff':<8}")
+    print(f"{'-'*70}")
+    for seed, dice_c, base_c, total in seed_summaries:
+        diff = dice_c - base_c
+        diff_str = f"{diff:+d}"
+        print(f"{seed:<6} {dice_c}/{total:<12} {base_c}/{total:<12} {diff_str:<8}")
+    print(f"{'='*70}")
