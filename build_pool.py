@@ -13,65 +13,54 @@ COLLECTION_NAME = "hotpotqa_pool"
 MAX_STEPS = 6
 LEVELS = ["hard", "medium"]  # 可改为 None 表示不过滤难度
 
-EXTRACTION_PROMPT = """Extract the abstract reasoning strategy from the trajectory below.
+EXTRACTION_PROMPT = """Please extract the transferable knowledge from the following trajectory of an agent. The trajectory contains a sequence of Action and Observations, describing how the agent solve a question by thinking, acting and observing. Here are some examples.
 
-Rules:
-- Do NOT mention any specific names, dates, places, or entities.
-- Use generic terms: Entity A, Entity B, Subject, Attribute.
-- Output exactly three lines: Type, Steps, Strategy.
-
-Example 1:
 Trajectory:
-Task: Which of Entity A or Entity B was created first?
-Thought: I need to find when Entity A was created.
-Action: Search[Entity A]
-Observation: [Title: Entity A] Entity A was created in 1990...
-Thought: Now I need to find when Entity B was created.
-Action: Search[Entity B]
-Observation: [Title: Entity B] Entity B was created in 1975...
-Thought: Entity B (1975) is earlier than Entity A (1990).
-Action: Finish[Entity B]
 
-Output:
-Type: comparison
-Steps: 1) Search Entity A for Attribute. 2) Search Entity B for same Attribute. 3) Compare and finish.
-Strategy: Search two entities separately, compare a shared attribute, return the one that fits.
+Question: Which magazine was started first Arthur's Magazine or First for Women?
 
-Example 2:
+Thought 1: I need to search Arthur's Magazine and First for Women, and find which was started first.
+
+Action 1: Search[Arthur's Magazine]
+
+Observation 1: Arthur's Magazine (1844-1846) was an American literary periodical published in Philadelphia in the 19th century.
+
+Thought 2: Arthur's Magazine was started in 1844. I need to search First for Women next.
+
+Action 2: Search[First for Women]
+
+Observation 2: First for Women is a woman's magazine published by Bauer Media Group in the USA.[1] The magazine was started in 1989.
+
+Thought 3: First for Women was started in 1989. 1844 (Arthur's Magazine) < 1989 (First for Women), so Arthur's Magazine was started first.
+
+Action 3: Finish[Arthur's Magazine]
+
+Transferable Knowledge: We need to compare the feature "start year" of the two magazines, so we need to search the two magazines respectively, find out the start year of each of them and compare this feature to figure out which one is earlier.
+
+Question: Were Pavel Urysohn and Leonid Levin known for the same type of work?
+
+Thought 1: I need to search Pavel Urysohn and Leonid Levin, find their types of work, then find if they are the same.
+
+Action 1: Search[Pavel Urysohn]
+
+Observation 1: Pavel Samuilovich Urysohn (February 3, 1898 - August 17, 1924) was a Soviet mathematician who is best known for his contributions in dimension theory.
+
+Thought 2: Pavel Urysohn is a mathematician. I need to search Leonid Levin next and find its type of work.
+
+Action 2: Search[Leonid Levin]
+
+Observation 2: Leonid Anatolievich Levin is a Soviet-American mathematician and computer scientist.
+
+Thought 3: Leonid Levin is a mathematician and computer scientist. So Pavel Urysohn and Leonid Levin have the same type of work.
+
+Action 3: Finish[yes]
+
+Transferable Knowledge: We need to compare the feature "work" of the two persons to determine whether they were known for the same type of work, so we need to search the two person respectively, find out the job they did, and compare if they are the same.
+
 Trajectory:
-Task: What is the occupation of the founder of Entity A?
-Thought: I need to find who founded Entity A.
-Action: Search[Entity A]
-Observation: [Title: Entity A] Entity A was founded by Subject B...
-Thought: Now I need to find Subject B's occupation.
-Action: Search[Subject B]
-Observation: [Title: Subject B] Subject B is a scientist...
-Thought: Subject B is a scientist.
-Action: Finish[scientist]
-
-Output:
-Type: multi-hop
-Steps: 1) Search Entity A to find intermediate Subject. 2) Search Subject for target Attribute. 3) Finish.
-Strategy: Chain through an intermediate entity discovered in the first search to reach the final answer.
-
-Example 3:
-Trajectory:
-Task: What is the Attribute of Entity A?
-Thought: I should search for Entity A.
-Action: Search[Entity A]
-Observation: [Title: Entity A] Entity A is a French novelist...
-Thought: The answer is French.
-Action: Finish[French]
-
-Output:
-Type: lookup
-Steps: 1) Search Entity A. 2) Extract Attribute from results. 3) Finish.
-Strategy: Direct single-entity search and attribute extraction.
-
-Now extract from this trajectory:
 {trajectory}
 
-Output:"""
+Transferable Knowledge:"""
 
 def history_to_trajectory(question, history, final_answer):
     """将baseline运行时的history转为轨迹字符串"""
