@@ -6,7 +6,8 @@ import ollama
 from tqdm import tqdm
 from dice_agent import DICEAgent, exact_match
 
-TARGET_SIZE = 500
+TARGET_SIZE = 500  # 本次新增的目标条数
+START_INDEX = 0    # 从筛选后的数据集索引开始（可设置为2000等）
 DB_PATH = "./dice_vector_db"
 COLLECTION_NAME = "hotpotqa_pool"
 MAX_STEPS = 6
@@ -88,13 +89,9 @@ def build():
     print(f"初始化Embedding模型")
     encoder = SentenceTransformer("all-MiniLM-L6-v2")
     print(f"初始化向量数据库(ChromaDB)")
-    # 将数据存储到DB_PATH这个文件中
+    # 将数据存储到DB_PATH这个文件中（追加写入，不清空旧库）
     client = chromadb.PersistentClient(path=DB_PATH)
-    try:
-        client.delete_collection(COLLECTION_NAME) # 清空旧数据
-    except:
-        pass
-    collection = client.create_collection(COLLECTION_NAME)
+    collection = client.get_or_create_collection(COLLECTION_NAME)
     print(f"加载HotpotQA数据集")
     dataset = load_dataset("hotpot_qa", "distractor", split=f"train", trust_remote_code=True)
     # 难度筛选
@@ -104,12 +101,16 @@ def build():
     else:
         filtered_dataset = dataset
     filtered_dataset = filtered_dataset.shuffle(seed=42)
+    if START_INDEX > 0:
+        filtered_dataset = filtered_dataset.select(range(START_INDEX, len(filtered_dataset)))
 
     # baseline agent（用于跑题收集成功轨迹）
     agent = DICEAgent()
 
     print(f"开始构建知识库（baseline刷题 + Gemma提取TK）")
 
+    # 已有ID，避免重复写入
+    existing = set(collection.get(include=[]).get("ids", []))
     ids = []
     embeddings = []
     metadatas = []
@@ -140,7 +141,10 @@ def build():
         
         # 计算向量
         vec = encoder.encode(tk).tolist()
-        ids.append(str(item['id']))
+        item_id = str(item['id'])
+        if item_id in existing:
+            continue
+        ids.append(item_id)
         embeddings.append(vec)
         metadatas.append({"raw_trajectory": raw_traj})
         documents.append(tk)
