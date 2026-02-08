@@ -174,7 +174,7 @@ class DICEAgent:
         # 初始化历史记录
         self.history = []
     
-    def retrieve_demos(self, task, current_history_str, top_k=3):
+    def retrieve_demos(self, task, current_history_str, top_k=1):
         # 用检索模型预测“需要的推理策略”
         input_text = PREDICTION_PROMPT.format(task=task, history=current_history_str)
         predict_tk = call_llm(RETRIEVER_LLM, input_text, temperature=0.0, max_tokens=200)
@@ -465,7 +465,7 @@ if __name__ == "__main__":
     NUM_TEST = 20        # 测试题数量（可调整，建议 50-100）
     MAX_STEPS = 5          # 每题最大推理步数
     DIFFICULTY = None    # 筛选难度: "hard" / "medium" / 两者都要改为 None
-    SEEDS = [5, 6, 7, 8]
+    SEEDS = [6, 7, 8]
 
     # 加载 HotpotQA 验证集
     print("📥 正在加载 HotpotQA 验证集...")
@@ -545,6 +545,7 @@ if __name__ == "__main__":
         print(f"  差值:        {(dice_correct - base_correct)/total*100:+.1f}%")
         print(f"{'='*70}")
         seed_summaries.append((SEED, dice_correct, base_correct, total))
+
 
         # 逐题明细
         print(f"\n{'─'*70}")
