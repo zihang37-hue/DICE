@@ -30,17 +30,17 @@ print()
 print("=" * 60)
 print("前3条数据示例")
 print("=" * 60)
-for i in range(min(3, len(results['ids']))):
-    print(f"\n【记录 {i+1}】")
-    print(f"ID: {results['ids'][i]}")
-    print(f"Embedding维度: {len(results['embeddings'][i])}")
-    print(f"Embedding前5维: {results['embeddings'][i][:5]}")
-    print(f"\nTransferable Knowledge (TK):")
-    print(results['documents'][i][:200] + "..." if len(results['documents'][i]) > 200 else results['documents'][i])
-    print(f"\nRaw Trajectory (前200字符):")
-    traj = results['metadatas'][i]['raw_trajectory']
-    print(traj[:200] + "..." if len(traj) > 200 else traj)
-    print("-" * 60)
+i = 20
+print(f"\n【记录 {i+1}】")
+print(f"ID: {results['ids'][i]}")
+print(f"Embedding维度: {len(results['embeddings'][i])}")
+print(f"Embedding前5维: {results['embeddings'][i][:5]}")
+print(f"\nTransferable Knowledge (TK):")
+print(results['documents'][i] + "..." if len(results['documents'][i]) > 200 else results['documents'][i])
+print(f"\nRaw Trajectory (前200字符):")
+traj = results['metadatas'][i]['raw_trajectory']
+print(traj + "..." if len(traj) > 200 else traj)
+print("-" * 60)
 
 # 4. 测试相似度查询
 print("\n" + "=" * 60)
