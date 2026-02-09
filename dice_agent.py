@@ -53,6 +53,21 @@ def clean_demo_text(demo_text):
         lines.append(line)
     return "\n".join(lines)
 
+def normalize_react_demo(demo_text):
+    """规范 demo 格式，避免编号/多余提示干扰主模型"""
+    if not demo_text:
+        return demo_text
+    text = demo_text
+    # 统一编号格式为无编号
+    text = re.sub(r'(?m)^(Thought|Action|Observation)\s+\d+\s*:\s*', r'\1: ', text)
+    # 去掉重复的 Observation 前缀
+    text = re.sub(r'(?m)^Observation:\s*Observation:\s*', 'Observation: ', text)
+    # 去掉搜索工具附带的提示行
+    text = re.sub(r'(?m)^\(If this answers the question.*\)$', '', text)
+    # 合并过多空行
+    text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    return text
+
 # [在线阶段 Prompt] 让 Gemma 预测下一步需要什么逻辑
 PREDICTION_PROMPT_OLD = """Predict the abstract reasoning strategy needed for the next step.
 
@@ -267,7 +282,7 @@ class DICEAgent:
         if use_tk:
             demos = self.retrieve_demos(task, history_str)
             if demos:
-                demos = [clean_demo_text(d) for d in demos]
+                demos = [normalize_react_demo(clean_demo_text(d)) for d in demos]
             demo_text = "\n\n".join(demos) if demos else ""
         else:
             demo_text = ""
