@@ -1,4 +1,5 @@
 import re
+import random
 import ollama
 import chromadb
 from sentence_transformers import SentenceTransformer
@@ -244,8 +245,20 @@ class DICEAgent:
 
         # 初始化历史记录
         self.history = []
+        # baseline 随机示例缓存（每题固定一次）
+        self.random_demo_text = ""
+
+    def _sample_random_demos(self, k=5):
+        """从向量库随机抽取示例轨迹（baseline 用）"""
+        results = self.collection.get(include=["metadatas"])
+        metadatas = results.get("metadatas") or []
+        if not metadatas:
+            return []
+        k = min(k, len(metadatas))
+        sampled = random.sample(metadatas, k)
+        return [m.get("raw_trajectory", "") for m in sampled if m.get("raw_trajectory")]
     
-    def retrieve_demos(self, task, current_history_str, top_k=1):
+    def retrieve_demos(self, task, current_history_str, top_k=2):
         # 用检索模型预测“需要的推理策略”
         input_text = PREDICTION_PROMPT.format(task=task, history=current_history_str)
         predict_tk = call_llm(RETRIEVER_LLM, input_text, temperature=0.0, max_tokens=200)
@@ -285,7 +298,7 @@ class DICEAgent:
                 demos = [normalize_react_demo(clean_demo_text(d)) for d in demos]
             demo_text = "\n\n".join(demos) if demos else ""
         else:
-            demo_text = ""
+            demo_text = self.random_demo_text or ""
 
         # 组装主LLM提示词
         full_prompt = REACT_SYSTEM_PROMPT.format(task=task, demonstrations=demo_text)
@@ -379,11 +392,18 @@ Answer (just the answer, nothing else):"""
         mode_tag = "DICE(+TK)" if use_tk else "Baseline(no TK)"
         print(f"\n{'='*60}\n📋 [{mode_tag}] 任务: {task}\n{'='*60}")
         self.history = []
+        self.random_demo_text = ""
         search_tool = RobustWikipediaEnv()
         
         # 防重复机制
         searched_queries = set()  # 记录所有搜过的query
         consecutive_failures = 0  # 连续失败次数
+
+        if not use_tk:
+            demos = self._sample_random_demos(k=5)
+            if demos:
+                demos = [normalize_react_demo(clean_demo_text(d)) for d in demos]
+            self.random_demo_text = "\n\n".join(demos) if demos else ""
 
         for i in range(max_steps):
             # 生成下一步动作
