@@ -28,6 +28,7 @@ def get_required(cfg, *keys):
 
 CONFIG = load_config()
 MODELS = get_required(CONFIG, "models")
+AGENT_CFG = get_required(CONFIG, "agent")
 
 DB_PATH = str(ROOT_DIR / get_required(CONFIG, "db_path"))
 COLLECTION_NAME = get_required(CONFIG, "collection_name")
@@ -35,3 +36,6 @@ COLLECTION_NAME = get_required(CONFIG, "collection_name")
 MAIN_LLM = get_required(MODELS, "main_llm")
 RETRIEVER_LLM = get_required(MODELS, "retriever_llm")
 EMBEDDING_MODEL = get_required(MODELS, "embedding_model")
+
+DICE_TOP_K = int(get_required(AGENT_CFG, "dice_top_k"))
+BASELINE_RANDOM_K = int(get_required(AGENT_CFG, "baseline_random_k"))

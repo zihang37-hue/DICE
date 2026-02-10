@@ -4,7 +4,7 @@ import random
 import chromadb
 from sentence_transformers import SentenceTransformer
 
-from dice.config import DB_PATH, COLLECTION_NAME, EMBEDDING_MODEL, MAIN_LLM, RETRIEVER_LLM
+from dice.config import DB_PATH, COLLECTION_NAME, EMBEDDING_MODEL, MAIN_LLM, RETRIEVER_LLM, DICE_TOP_K, BASELINE_RANDOM_K
 from dice.env import RobustWikipediaEnv
 from dice.llm import call_llm
 from dice.prompts import PREDICTION_PROMPT, REACT_SYSTEM_PROMPT
@@ -22,8 +22,10 @@ class DICEAgent:
 
         self.history = []
 
-    def _sample_random_demos(self, k=5):
+    def _sample_random_demos(self, k=None):
         """从向量库随机抽取示例轨迹（baseline 用）"""
+        if k is None:
+            k = BASELINE_RANDOM_K
         results = self.collection.get(include=["metadatas"])
         metadatas = results.get("metadatas") or []
         if not metadatas:
@@ -32,7 +34,9 @@ class DICEAgent:
         sampled = random.sample(metadatas, k)
         return [m.get("raw_trajectory", "") for m in sampled if m.get("raw_trajectory")]
 
-    def retrieve_demos(self, task, current_history_str, top_k=2):
+    def retrieve_demos(self, task, current_history_str, top_k=None):
+        if top_k is None:
+            top_k = DICE_TOP_K
         input_text = PREDICTION_PROMPT.format(task=task, history=current_history_str)
         predict_tk = call_llm(RETRIEVER_LLM, input_text, temperature=0.0, max_tokens=200)
         if not predict_tk:
@@ -66,7 +70,7 @@ class DICEAgent:
                 demos = [normalize_react_demo(clean_demo_text(d)) for d in demos]
             demo_text = "\n\n".join(demos) if demos else ""
         else:
-            demos = self._sample_random_demos(k=5)
+            demos = self._sample_random_demos(k=BASELINE_RANDOM_K)
             if demos:
                 demos = [normalize_react_demo(clean_demo_text(d)) for d in demos]
             demo_text = "\n\n".join(demos) if demos else ""
