@@ -21,6 +21,7 @@ class DICEAgent:
         self.encoder = SentenceTransformer(EMBEDDING_MODEL)
 
         self.history = []
+        self._baseline_demo_text = ""  # baseline 每题固定一组示例，整题复用
 
     def _sample_random_demos(self, k=None):
         """从向量库随机抽取示例轨迹（baseline 用）"""
@@ -70,10 +71,7 @@ class DICEAgent:
                 demos = [normalize_react_demo(clean_demo_text(d)) for d in demos]
             demo_text = "\n\n".join(demos) if demos else ""
         else:
-            demos = self._sample_random_demos(k=BASELINE_RANDOM_K)
-            if demos:
-                demos = [normalize_react_demo(clean_demo_text(d)) for d in demos]
-            demo_text = "\n\n".join(demos) if demos else ""
+            demo_text = self._baseline_demo_text
 
         full_prompt = REACT_SYSTEM_PROMPT.format(task=task, demonstrations=demo_text)
         full_prompt += history_str
@@ -149,13 +147,19 @@ Answer (just the answer, nothing else):"""
     def run_task(self, task, max_steps=6, use_tk=True):
         """
         执行任务，带有完整的防重复和错误处理机制
-        use_tk: True=使用DICE检索TK示例，False=每步随机5示例baseline
+        use_tk: True=使用DICE每步检索示例，False=baseline每题固定随机6示例
         """
         mode_tag = "DICE(+TK)" if use_tk else "Baseline(no TK)"
         print(f"\n{'='*60}\n📋 [{mode_tag}] 任务: {task}\n{'='*60}")
         self.history = []
-        search_tool = RobustWikipediaEnv(max_chars=OBSERVATION_MAX_CHARS)
+        self._baseline_demo_text = ""
+        if not use_tk:
+            demos = self._sample_random_demos(k=BASELINE_RANDOM_K)
+            if demos:
+                demos = [normalize_react_demo(clean_demo_text(d)) for d in demos]
+            self._baseline_demo_text = "\n\n".join(demos) if demos else ""
 
+        search_tool = RobustWikipediaEnv(max_chars=OBSERVATION_MAX_CHARS)
         searched_queries = set()
         consecutive_failures = 0
 
