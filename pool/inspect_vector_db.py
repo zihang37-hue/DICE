@@ -1,8 +1,40 @@
+from pathlib import Path
+
 import chromadb
 
+ROOT_DIR = Path(__file__).resolve().parents[1]
+
+def load_config():
+    config_path = ROOT_DIR / "config.yaml"
+    if not config_path.exists():
+        raise FileNotFoundError(f"config.yaml not found at: {config_path}")
+    try:
+        import yaml
+    except ImportError as exc:
+        raise ImportError("Missing dependency: PyYAML. Install with `pip install pyyaml`.") from exc
+    with config_path.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+def get_required(cfg, *keys):
+    cur = cfg
+    path = []
+    for key in keys:
+        path.append(str(key))
+        if not isinstance(cur, dict) or key not in cur:
+            raise KeyError(f"Missing config: {'.'.join(path)}")
+        cur = cur[key]
+    return cur
+
+CONFIG = load_config()
+INSPECT_CFG = get_required(CONFIG, "inspect_vector_db")
+DB_PATH = str(ROOT_DIR / get_required(CONFIG, "db_path"))
+COLLECTION_NAME = get_required(CONFIG, "collection_name")
+EXAMPLE_INDEX = int(get_required(INSPECT_CFG, "example_index"))
+QUERY_TOP_K = int(get_required(INSPECT_CFG, "query_top_k"))
+
 # 连接数据库
-client = chromadb.PersistentClient(path="./dice_vector_db")
-collection = client.get_collection("hotpotqa_pool")
+client = chromadb.PersistentClient(path=DB_PATH)
+collection = client.get_collection(COLLECTION_NAME)
 
 # 1. 查看基本信息
 print("=" * 60)
@@ -30,14 +62,14 @@ print()
 print("=" * 60)
 print("前3条数据示例")
 print("=" * 60)
-i = 20
+i = EXAMPLE_INDEX
 print(f"\n【记录 {i+1}】")
 print(f"ID: {results['ids'][i]}")
 print(f"Embedding维度: {len(results['embeddings'][i])}")
 print(f"Embedding前5维: {results['embeddings'][i][:5]}")
 print(f"\nTransferable Knowledge (TK):")
 print(results['documents'][i] + "..." if len(results['documents'][i]) > 200 else results['documents'][i])
-print(f"\nRaw Trajectory (前200字符):")
+print(f"\nRaw Trajectory (完整):")
 traj = results['metadatas'][i]['raw_trajectory']
 print(traj + "..." if len(traj) > 200 else traj)
 print("-" * 60)
@@ -48,7 +80,7 @@ print("测试：查询与第1条最相似的3条记录")
 print("=" * 60)
 query_results = collection.query(
     query_embeddings=[results['embeddings'][0]],
-    n_results=3,
+    n_results=QUERY_TOP_K,
     include=['documents', 'distances']
 )
 
