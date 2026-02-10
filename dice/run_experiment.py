@@ -5,16 +5,21 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+import chromadb
 from datasets import load_dataset
 
 from dice.agent import DICEAgent
-from dice.config import MAIN_LLM, RETRIEVER_LLM, load_config, get_required
+from dice.config import MAIN_LLM, RETRIEVER_LLM, DB_PATH, COLLECTION_NAME, load_config, get_required
 from dice.utils import exact_match
+from tools.experiment_results import write_experiment_results
 
 
 def main():
     config = load_config()
     exp_cfg = get_required(config, "experiment")
+    agent_cfg = get_required(config, "agent")
+    build_cfg = get_required(config, "build_pool")
+    models_cfg = get_required(config, "models")
 
     num_test = int(get_required(exp_cfg, "num_test"))
     max_steps = int(get_required(exp_cfg, "max_steps"))
@@ -23,6 +28,29 @@ def main():
     dataset_name = get_required(exp_cfg, "dataset_name")
     dataset_config = get_required(exp_cfg, "dataset_config")
     split = get_required(exp_cfg, "split")
+
+    # 向量数据库当前条数
+    try:
+        client = chromadb.PersistentClient(path=DB_PATH)
+        collection = client.get_collection(COLLECTION_NAME)
+        vector_db_count = collection.count()
+    except Exception as e:
+        vector_db_count = None  # 无法连接时记为 None
+
+    config_summary = {
+        "main_llm": get_required(models_cfg, "main_llm"),
+        "retriever_llm": get_required(models_cfg, "retriever_llm"),
+        "embedding_model": get_required(models_cfg, "embedding_model"),
+        "vector_db_count": vector_db_count,
+        "vector_db_difficulty": get_required(build_cfg, "levels"),
+        "dice_top_k": int(get_required(agent_cfg, "dice_top_k")),
+        "baseline_random_k": int(get_required(agent_cfg, "baseline_random_k")),
+        "observation_max_chars": int(get_required(agent_cfg, "observation_max_chars")),
+        "num_test": num_test,
+        "max_steps": max_steps,
+        "test_difficulty": difficulty,
+        "seeds": seeds,
+    }
 
     print("📥 正在加载 HotpotQA 验证集...")
     val_dataset = load_dataset(dataset_name, dataset_config, split=split, trust_remote_code=True)
@@ -116,6 +144,20 @@ def main():
         diff_str = f"{diff:+d}"
         print(f"{seed:<6} {dice_c}/{total:<12} {base_c}/{total:<12} {diff_str:<8}")
     print(f"{'='*70}")
+
+    # 汇总所有 seed 的总题数与总对题数，写入 tools 目录
+    total_tests = sum(t for _, _, _, t in seed_summaries)
+    dice_total_correct = sum(d for _, d, _, _ in seed_summaries)
+    baseline_total_correct = sum(b for _, _, b, _ in seed_summaries)
+    results_summary = {
+        "total_tests": total_tests,
+        "dice_correct": dice_total_correct,
+        "baseline_correct": baseline_total_correct,
+    }
+    output_path = write_experiment_results(
+        config_summary, results_summary, output_dir=ROOT_DIR / "results"
+    )
+    print(f"\n📁 实验结果已写入: {output_path}")
 
 
 if __name__ == "__main__":
