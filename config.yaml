@@ -15,6 +15,10 @@ build_pool:
   dataset_config: distractor # 数据集配置
   split: train # 建库使用训练集
 
+agent:
+  dice_top_k: 3 # DICE每步检索的高质量示例数
+  baseline_random_k: 6 # Baseline每步随机抽取的示例数
+
 experiment:
   num_test: 30 # 测试题数量
   max_steps: 6 # 每题最大推理步数
@@ -32,4 +36,4 @@ inspect_data:
 
 inspect_vector_db:
   example_index: 25 # 向量数据库示例记录索引
-  query_top_k: 2 # 相似检索返回数量
+  query_top_k: 3 # 相似检索返回数量
