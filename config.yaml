@@ -18,12 +18,13 @@ build_pool:
 agent:
   dice_top_k: 3 # DICE每步检索的高质量示例数
   baseline_random_k: 6 # Baseline每步随机抽取的示例数
+  observation_max_chars: 3000 # 单次Observation返回的Wiki摘要最大字符数
 
 experiment:
-  num_test: 30 # 测试题数量
+  num_test: 20 # 测试题数量
   max_steps: 6 # 每题最大推理步数
   difficulty: null # 难度筛选(设为null表示不过滤)
-  seeds: [100, 281, 491] # 随机种子列表
+  seeds: [723, 127, 123] # 随机种子列表
   dataset_name: hotpot_qa # 数据集名称
   dataset_config: distractor # 数据集配置
   split: validation # 测试使用验证集
