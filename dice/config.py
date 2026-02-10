@@ -39,3 +39,4 @@ EMBEDDING_MODEL = get_required(MODELS, "embedding_model")
 
 DICE_TOP_K = int(get_required(AGENT_CFG, "dice_top_k"))
 BASELINE_RANDOM_K = int(get_required(AGENT_CFG, "baseline_random_k"))
+OBSERVATION_MAX_CHARS = int(get_required(AGENT_CFG, "observation_max_chars"))

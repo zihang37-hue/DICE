@@ -4,7 +4,7 @@ import random
 import chromadb
 from sentence_transformers import SentenceTransformer
 
-from dice.config import DB_PATH, COLLECTION_NAME, EMBEDDING_MODEL, MAIN_LLM, RETRIEVER_LLM, DICE_TOP_K, BASELINE_RANDOM_K
+from dice.config import DB_PATH, COLLECTION_NAME, EMBEDDING_MODEL, MAIN_LLM, RETRIEVER_LLM, DICE_TOP_K, BASELINE_RANDOM_K, OBSERVATION_MAX_CHARS
 from dice.env import RobustWikipediaEnv
 from dice.llm import call_llm
 from dice.prompts import PREDICTION_PROMPT, REACT_SYSTEM_PROMPT
@@ -154,7 +154,7 @@ Answer (just the answer, nothing else):"""
         mode_tag = "DICE(+TK)" if use_tk else "Baseline(no TK)"
         print(f"\n{'='*60}\n📋 [{mode_tag}] 任务: {task}\n{'='*60}")
         self.history = []
-        search_tool = RobustWikipediaEnv()
+        search_tool = RobustWikipediaEnv(max_chars=OBSERVATION_MAX_CHARS)
 
         searched_queries = set()
         consecutive_failures = 0
