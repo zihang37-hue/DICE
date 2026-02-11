@@ -143,13 +143,10 @@ def build():
 
     # 已有ID，避免重复写入
     existing = set(collection.get(include=[]).get("ids", []))
-    ids = []
-    embeddings = []
-    metadatas = []
-    documents = [] # 存储TK
+    added_count = 0
 
     for i, item in enumerate(tqdm(filtered_dataset, desc="Processing")):
-        if len(ids) >= TARGET_SIZE:
+        if added_count >= TARGET_SIZE:
             break
 
         # 用 baseline agent 跑题，只保留答对的轨迹
@@ -170,34 +167,29 @@ def build():
         except Exception as e:
             print(f"Error extracting knowledge for item {i}: {e}")
             continue
-        
+
         # 计算向量
         vec = encoder.encode(tk).tolist()
         item_id = str(item['id'])
         if item_id in existing:
             continue
-        ids.append(item_id)
-        embeddings.append(vec)
-        metadatas.append({"raw_trajectory": raw_traj})
-        documents.append(tk)
 
-        print(f"已成功生成 {len(ids)} 条（尝试了 {i} 题）")
-    
-    # 检查是否有成功处理的数据
-    if not ids:
+        # 每构建一条就立即写入数据库，避免中断时丢失
+        collection.add(
+            documents=[tk],
+            embeddings=[vec],
+            ids=[item_id],
+            metadatas=[{"raw_trajectory": raw_traj}]
+        )
+        existing.add(item_id)
+        added_count += 1
+        print(f"已成功生成 {added_count} 条（尝试了 {i} 题）")
+
+    if added_count == 0:
         print("⚠️ 警告：没有成功处理任何样本！请检查Ollama服务是否正常运行。")
         return
-    
-    print(f"✅ 成功处理 {len(ids)}/{TARGET_SIZE} 个样本")
-    print(f"📦 添加到向量数据库...")
-    
-    collection.add(
-        documents=documents,
-        embeddings=embeddings,
-        ids=ids,
-        metadatas=metadatas
-    )
-    print(f"🎉 知识库构建完成！共 {len(ids)} 条记录。")
+
+    print(f"🎉 知识库构建完成！共 {added_count} 条记录。")
 
 if __name__ == "__main__":
     build()
