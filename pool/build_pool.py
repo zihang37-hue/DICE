@@ -152,7 +152,7 @@ def build():
         # 用 baseline agent 跑题，只保留答对的轨迹
         question = item["question"]
         gold_answer = item["answer"]
-        pred = agent.run_task(question, max_steps=MAX_STEPS, use_tk=False)
+        pred = agent.run_task(question, max_steps=MAX_STEPS, use_tk=False, use_demos=False)
         if not pred or not exact_match(pred, gold_answer):
             continue
         raw_traj = history_to_trajectory(question, agent.history, pred)

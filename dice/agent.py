@@ -144,16 +144,17 @@ Answer (just the answer, nothing else):"""
 
         return "Finish[Unknown]"
 
-    def run_task(self, task, max_steps=6, use_tk=True):
+    def run_task(self, task, max_steps=6, use_tk=True, use_demos=True):
         """
         执行任务，带有完整的防重复和错误处理机制
         use_tk: True=使用DICE每步检索示例，False=baseline每题固定随机6示例
+        use_demos: True=使用示例(随机或DICE)，False=0示例(建库时用)
         """
-        mode_tag = "DICE(+TK)" if use_tk else "Baseline(no TK)"
+        mode_tag = "DICE(+TK)" if use_tk else ("Baseline(no TK)" if use_demos else "Build(0 demos)")
         print(f"\n{'='*60}\n📋 [{mode_tag}] 任务: {task}\n{'='*60}")
         self.history = []
         self._baseline_demo_text = ""
-        if not use_tk:
+        if not use_tk and use_demos:
             demos = self._sample_random_demos(k=BASELINE_RANDOM_K)
             if demos:
                 demos = [normalize_react_demo(clean_demo_text(d)) for d in demos]
