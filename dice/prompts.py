@@ -1,3 +1,4 @@
+# 功能点：DICE 每步推理前，用此 prompt 让检索模型根据「题目 + 当前轨迹」预测「当前步所需知识」文本，再向量化后去库中检索
 PREDICTION_PROMPT = """Please extract the transferable knowledge the the agent need at the current state to solve the problem. The current state of the agent is given, which contains a sequence of Action and Observations, describing how the agent solve a question by thinking, acting and observing. Here are some examples.
 
 Trajectory:
@@ -54,6 +55,7 @@ Question: {task}
 
 Knowledge Required:"""
 
+# 功能点：主模型（如 Qwen）的 ReAct 系统说明 + 规则 + 示例占位；{task} 与 {demonstrations} 由 agent 在 step 中填入
 REACT_SYSTEM_PROMPT = """You are a smart agent answering questions using Wikipedia search.
 You MUST follow the Thought-Action format strictly. Every response MUST contain exactly ONE "Action:" line.
 

@@ -55,7 +55,7 @@ def test_ollama_models():
     print(f"检索器 回复: {res['response'][:20]}...")
 
     print("\n[3/3] 测试 主推理模型 (主 Agent)...")
-    # 关键点！这一步会尝试把主模型也挤进内存
+    # 把主模型也挤进内存
     # 如果内存不够，Ollama 可能会卸载检索器模型，或者系统开始 Swap
     start_time = time.time()
     res = ollama.generate(model=MAIN_LLM, prompt='Are you ready to work with the retriever?')

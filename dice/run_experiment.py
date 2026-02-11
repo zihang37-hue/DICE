@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+# 功能点：保证项目根在 sys.path 中，以便 import dice / tools
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
@@ -15,6 +16,7 @@ from tools.experiment_results import write_experiment_results
 
 
 def main():
+    # 功能点：从 config 读取实验与 agent 相关配置
     config = load_config()
     exp_cfg = get_required(config, "experiment")
     agent_cfg = get_required(config, "agent")
@@ -29,13 +31,13 @@ def main():
     dataset_config = get_required(exp_cfg, "dataset_config")
     split = get_required(exp_cfg, "split")
 
-    # 向量数据库当前条数
+    # 功能点：连接向量库获取当前条数，用于写入实验配置摘要（失败则记为 None）
     try:
         client = chromadb.PersistentClient(path=DB_PATH)
         collection = client.get_collection(COLLECTION_NAME)
         vector_db_count = collection.count()
     except Exception as e:
-        vector_db_count = None  # 无法连接时记为 None
+        vector_db_count = None
 
     config_summary = {
         "main_llm": get_required(models_cfg, "main_llm"),
@@ -52,6 +54,7 @@ def main():
         "seeds": seeds,
     }
 
+    # 功能点：加载验证集，并按 difficulty 筛选（若配置了难度）
     print("📥 正在加载 HotpotQA 验证集...")
     val_dataset = load_dataset(dataset_name, dataset_config, split=split, trust_remote_code=True)
 
@@ -61,6 +64,7 @@ def main():
 
     seed_summaries = []
     for seed in seeds:
+        # 功能点：按当前 seed 打乱验证集并取前 num_test 条作为本轮测试集
         if len(val_dataset) > num_test:
             test_dataset = val_dataset.shuffle(seed=seed).select(range(num_test))
         else:
@@ -80,6 +84,7 @@ def main():
             print(f"# 第 {i+1}/{len(test_dataset)} 题  |  标准答案: {gold_answer}")
             print(f"{'#'*60}")
 
+            # 功能点：同一题先跑 DICE（use_tk=True，每步检索示例），再跑 baseline（use_tk=False，每题随机 6 示例）
             ans_tk = agent.run_task(question, max_steps=max_steps, use_tk=True)
             tk_match = exact_match(ans_tk, gold_answer) if ans_tk else False
             if tk_match:
@@ -90,6 +95,7 @@ def main():
             if no_match:
                 base_correct += 1
 
+            # 功能点：记录本题的题目、标准答案、两种模式的答案与 EM 结果，用于汇总与写入
             record = {
                 "id": item.get("id") if isinstance(item, dict) else None,
                 "question": question,
@@ -145,7 +151,7 @@ def main():
         print(f"{seed:<6} {dice_c}/{total:<12} {base_c}/{total:<12} {diff_str:<8}")
     print(f"{'='*70}")
 
-    # 汇总所有 seed 的总题数与总对题数，写入 tools 目录
+    # 功能点：汇总所有 seed 的总题数、DICE 对题数、baseline 对题数，写入 results 目录的 JSON
     total_tests = sum(t for _, _, _, t in seed_summaries)
     dice_total_correct = sum(d for _, d, _, _ in seed_summaries)
     baseline_total_correct = sum(b for _, _, b, _ in seed_summaries)
