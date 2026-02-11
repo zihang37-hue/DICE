@@ -21,6 +21,7 @@ env/
 
 # Vector DB (large, regeneratable)
 dice_vector_db/
+dice_vector_db_v2/
 
 # Misc
 .DS_Store
