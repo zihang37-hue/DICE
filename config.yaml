@@ -36,5 +36,6 @@ inspect_data:
   sample_index: 1 # 展示样本索引
 
 inspect_vector_db:
-  example_index: 60 # 向量数据库示例记录索引
+  example_index: 0 # 起始记录索引(从该条起连续查看)
+  num_examples: 5 # 一次运行查看的示例与TK数量
   query_top_k: 3 # 相似检索返回数量
