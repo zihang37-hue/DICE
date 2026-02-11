@@ -30,6 +30,7 @@ INSPECT_CFG = get_required(CONFIG, "inspect_vector_db")
 DB_PATH = str(ROOT_DIR / get_required(CONFIG, "db_path"))
 COLLECTION_NAME = get_required(CONFIG, "collection_name")
 EXAMPLE_INDEX = int(get_required(INSPECT_CFG, "example_index"))
+NUM_EXAMPLES = int(get_required(INSPECT_CFG, "num_examples"))
 QUERY_TOP_K = int(get_required(INSPECT_CFG, "query_top_k"))
 
 # 连接数据库
@@ -58,21 +59,23 @@ print(f"Documents数量: {len(results['documents'])}")
 print(f"Metadatas数量: {len(results['metadatas'])}")
 print()
 
-# 3. 查看前3条数据
+# 3. 连续查看 num_examples 条示例及其 TK、轨迹
+total = len(results['ids'])
+start = max(0, min(EXAMPLE_INDEX, total - 1))
+end = min(start + NUM_EXAMPLES, total)
 print("=" * 60)
-print("前3条数据示例")
+print(f"示例与 TK（共 {end - start} 条，索引 {start} ~ {end - 1}）")
 print("=" * 60)
-i = EXAMPLE_INDEX
-print(f"\n【记录 {i+1}】")
-print(f"ID: {results['ids'][i]}")
-print(f"Embedding维度: {len(results['embeddings'][i])}")
-print(f"Embedding前5维: {results['embeddings'][i][:5]}")
-print(f"\nTransferable Knowledge (TK):")
-print(results['documents'][i] + "..." if len(results['documents'][i]) > 200 else results['documents'][i])
-print(f"\nRaw Trajectory (完整):")
-traj = results['metadatas'][i]['raw_trajectory']
-print(traj + "..." if len(traj) > 200 else traj)
-print("-" * 60)
+for idx in range(start, end):
+    i = idx
+    print(f"\n【记录 {i + 1} / {total}】 ID: {results['ids'][i]}")
+    print(f"\nTransferable Knowledge (TK):")
+    tk = results['documents'][i]
+    print(tk if len(tk) <= 500 else tk[:500] + "\n... (截断)")
+    print(f"\nRaw Trajectory:")
+    traj = results['metadatas'][i]['raw_trajectory']
+    print(traj if len(traj) <= 600 else traj[:600] + "\n... (截断)")
+    print("-" * 60)
 
 # 4. 测试相似度查询
 print("\n" + "=" * 60)
