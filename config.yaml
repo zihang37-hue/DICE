@@ -1,16 +1,16 @@
-db_path: dice_vector_db # 向量数据库路径(相对项目根)
+db_path: dice_vector_db_v2 # 向量数据库路径(相对项目根)
 collection_name: hotpotqa_pool # ChromaDB集合名称
 
 models:
   main_llm: qwen2.5:7b # 主推理模型
-  retriever_llm: gemma:2b # TK预测/提取模型
+  retriever_llm: gemma2:2b # TK预测/提取模型
   embedding_model: all-MiniLM-L6-v2 # 向量嵌入模型
 
 build_pool:
-  target_size: 500 # 本次建库新增目标条数
-  start_index: 100 # 训练集起始索引
+  target_size: 200 # 本次建库新增目标条数
+  start_index: 11000 # 训练集起始索引
   max_steps: 6 # 每题最大推理步数
-  levels: [hard, medium] # 难度筛选(设为null表示不过滤)
+  levels: null # 难度筛选(设为null表示不过滤)
   dataset_name: hotpot_qa # 数据集名称
   dataset_config: distractor # 数据集配置
   split: train # 建库使用训练集
@@ -24,7 +24,7 @@ experiment:
   num_test: 20 # 测试题数量
   max_steps: 6 # 每题最大推理步数
   difficulty: null # 难度筛选(设为null表示不过滤)
-  seeds: [723, 127, 123] # 随机种子列表
+  seeds: [623, 882, 121] # 随机种子列表
   dataset_name: hotpot_qa # 数据集名称
   dataset_config: distractor # 数据集配置
   split: validation # 测试使用验证集
@@ -36,5 +36,5 @@ inspect_data:
   sample_index: 1 # 展示样本索引
 
 inspect_vector_db:
-  example_index: 25 # 向量数据库示例记录索引
+  example_index: 60 # 向量数据库示例记录索引
   query_top_k: 3 # 相似检索返回数量

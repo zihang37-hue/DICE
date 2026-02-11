@@ -34,6 +34,7 @@ def get_required(cfg, *keys):
         cur = cur[key]
     return cur
 
+# 功能点：从 config 读取建库与模型相关配置
 CONFIG = load_config()
 MODELS = get_required(CONFIG, "models")
 BUILD_CFG = get_required(CONFIG, "build_pool")
@@ -43,10 +44,10 @@ COLLECTION_NAME = get_required(CONFIG, "collection_name")
 EMBEDDING_MODEL = get_required(MODELS, "embedding_model")
 RETRIEVER_LLM = get_required(MODELS, "retriever_llm")
 
-TARGET_SIZE = int(get_required(BUILD_CFG, "target_size"))  # 本次新增的目标条数
-START_INDEX = int(get_required(BUILD_CFG, "start_index"))    # 从筛选后的数据集索引开始（可设置为2000等）
+TARGET_SIZE = int(get_required(BUILD_CFG, "target_size"))
+START_INDEX = int(get_required(BUILD_CFG, "start_index"))
 MAX_STEPS = int(get_required(BUILD_CFG, "max_steps"))
-LEVELS = get_required(BUILD_CFG, "levels")  # 可改为 None 表示不过滤难度
+LEVELS = get_required(BUILD_CFG, "levels")
 DATASET_NAME = get_required(BUILD_CFG, "dataset_name")
 DATASET_CONFIG = get_required(BUILD_CFG, "dataset_config")
 DATASET_SPLIT = get_required(BUILD_CFG, "split")
@@ -105,7 +106,7 @@ Trajectory:
 Transferable Knowledge:"""
 
 def history_to_trajectory(question, history, final_answer):
-    """将baseline运行时的history转为轨迹字符串（带步骤号，与 EXTRACTION_PROMPT 示例格式一致）"""
+    """将 agent 的 history 转为带步骤号的轨迹字符串，与 EXTRACTION_PROMPT 中示例格式一致"""
     traj = f"Question: {question}\n"
     for i, record in enumerate(history, 1):
         traj += f"Thought {i}: {record['thought']}\n"
@@ -118,15 +119,16 @@ def history_to_trajectory(question, history, final_answer):
 
 
 def build():
+    # 功能点：初始化嵌入模型，用于将提取出的 TK 文本向量化
     print(f"初始化Embedding模型")
     encoder = SentenceTransformer(EMBEDDING_MODEL)
+    # 功能点：连接向量库，若不存在则创建；追加写入，不清空已有数据
     print(f"初始化向量数据库(ChromaDB)")
-    # 将数据存储到DB_PATH这个文件中（追加写入，不清空旧库）
     client = chromadb.PersistentClient(path=DB_PATH)
     collection = client.get_or_create_collection(COLLECTION_NAME)
+    # 功能点：加载 HotpotQA 指定 split，按 LEVELS 筛选难度，固定 seed 打乱，再从 START_INDEX 截断
     print(f"加载HotpotQA数据集")
     dataset = load_dataset(DATASET_NAME, DATASET_CONFIG, split=DATASET_SPLIT, trust_remote_code=True)
-    # 难度筛选
     if LEVELS:
         filtered_dataset = dataset.filter(lambda x: x['level'] in LEVELS)
         print(f"筛选难度 {LEVELS} 后: {len(filtered_dataset)}")
@@ -136,12 +138,12 @@ def build():
     if START_INDEX > 0:
         filtered_dataset = filtered_dataset.select(range(START_INDEX, len(filtered_dataset)))
 
-    # baseline agent（用于跑题收集成功轨迹）
+    # 功能点：建库时用 agent 跑题且 0 示例（use_tk=False, use_demos=False），只收集答对的轨迹
     agent = DICEAgent()
 
-    print(f"开始构建知识库（baseline刷题 + Gemma提取TK）")
+    print(f"开始构建知识库（0 示例刷题 + 检索模型提取 TK）")
 
-    # 已有ID，避免重复写入
+    # 功能点：读取库中已有 id 集合，避免同一题重复写入
     existing = set(collection.get(include=[]).get("ids", []))
     added_count = 0
 
@@ -149,14 +151,15 @@ def build():
         if added_count >= TARGET_SIZE:
             break
 
-        # 用 baseline agent 跑题，只保留答对的轨迹
+        # 功能点：用 0 示例模式跑题，仅当答对且与标准答案 EM 一致才进入后续流程
         question = item["question"]
         gold_answer = item["answer"]
         pred = agent.run_task(question, max_steps=MAX_STEPS, use_tk=False, use_demos=False)
         if not pred or not exact_match(pred, gold_answer):
             continue
+        # 功能点：将本条的 history + 最终答案 转成轨迹字符串，供 TK 提取 prompt 使用
         raw_traj = history_to_trajectory(question, agent.history, pred)
-        # 提取知识（通过本地Gemma）
+        # 功能点：用检索模型（如 Gemma）根据 EXTRACTION_PROMPT 从轨迹中提取一条 TK 文本
         try:
             res = ollama.generate(
                 model=RETRIEVER_LLM,
@@ -168,13 +171,13 @@ def build():
             print(f"Error extracting knowledge for item {i}: {e}")
             continue
 
-        # 计算向量
+        # 功能点：将 TK 文本向量化，得到用于检索的 embedding
         vec = encoder.encode(tk).tolist()
         item_id = str(item['id'])
         if item_id in existing:
             continue
 
-        # 每构建一条就立即写入数据库，避免中断时丢失
+        # 功能点：单条写入库（documents=TK 文本, embeddings=向量, metadatas=原始轨迹），便于中断不丢数据
         collection.add(
             documents=[tk],
             embeddings=[vec],
