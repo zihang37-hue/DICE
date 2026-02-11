@@ -2,7 +2,7 @@ db_path: dice_vector_db_v2 # 向量数据库路径(相对项目根)
 collection_name: hotpotqa_pool # ChromaDB集合名称
 
 models:
-  main_llm: qwen2.5:7b # 主推理模型
+  main_llm: qwen2.5-7b-8k # 主推理模型(8192 context，由 Modelfile.qwen 创建)
   retriever_llm: gemma2:2b # TK预测/提取模型
   embedding_model: all-MiniLM-L6-v2 # 向量嵌入模型
 
