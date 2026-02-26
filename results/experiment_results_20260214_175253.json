@@ -1,0 +1,25 @@
+{
+  "config": {
+    "main_llm": "qwen2.5-7b-8k",
+    "retriever_llm": "gemma2:2b",
+    "embedding_model": "all-MiniLM-L6-v2",
+    "vector_db_count": 604,
+    "vector_db_difficulty": null,
+    "dice_top_k": 3,
+    "baseline_random_k": 6,
+    "observation_max_chars": 3000,
+    "num_test": 100,
+    "max_steps": 6,
+    "test_difficulty": null,
+    "seeds": [
+      238,
+      234,
+      2021
+    ]
+  },
+  "results": {
+    "total_tests": 300,
+    "dice_correct": 87,
+    "baseline_correct": 99
+  }
+}
